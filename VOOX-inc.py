@@ -5,13 +5,13 @@ import threading
 import time
 import os
 import re
-import shutil  # <--- NOVA BIBLIOTECA PARA MOVER ARQUIVOS
+import shutil
 from datetime import datetime
 import pyautogui
 from openpyxl import Workbook, load_workbook
 
 # --- CONFIGURAÇÕES ---
-MODO_SIMULACAO = True  # Mude para False para usar o mouse/teclado real
+MODO_SIMULACAO = True
 pyautogui.FAILSAFE = True  
 pyautogui.PAUSE = 0.6      
 
@@ -110,7 +110,6 @@ class App(customtkinter.CTk):
         except PermissionError:
             self.log_visual("ERRO: Feche o Excel para salvar!")
 
-    # --- CORE ---
     def select_folder(self):
         folder = filedialog.askdirectory()
         if folder:
