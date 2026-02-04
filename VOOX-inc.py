@@ -5,6 +5,7 @@ import threading
 import time
 import os
 import re
+import shutil  # <--- NOVA BIBLIOTECA PARA MOVER ARQUIVOS
 from datetime import datetime
 import pyautogui
 from openpyxl import Workbook, load_workbook
@@ -74,7 +75,6 @@ class App(customtkinter.CTk):
 
     # --- LOGS ---
     def log_technical(self, message):
-        """Salva no txt oculto"""
         if self.txt_log_path:
             timestamp = datetime.now().strftime("%H:%M:%S")
             try:
@@ -83,7 +83,6 @@ class App(customtkinter.CTk):
             except: pass
 
     def log_visual(self, message):
-        """Mostra na tela e salva no txt"""
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.textbox_log.configure(state="normal")
         self.textbox_log.insert("end", f"[{timestamp}] {message}\n")
@@ -92,7 +91,6 @@ class App(customtkinter.CTk):
         self.log_technical(message)
 
     def log_excel(self, id_arquivo, nome_arquivo, status, motivo=""):
-        """Salva na planilha Excel"""
         if not self.excel_log_path: return
         try:
             try:
@@ -112,7 +110,7 @@ class App(customtkinter.CTk):
         except PermissionError:
             self.log_visual("ERRO: Feche o Excel para salvar!")
 
-    # --- FUNÇÕES CORE ---
+    # --- CORE ---
     def select_folder(self):
         folder = filedialog.askdirectory()
         if folder:
@@ -155,7 +153,7 @@ class App(customtkinter.CTk):
             time.sleep(1)
             return True, "Simulado"
 
-        # 1. Sequência de Busca
+        # 1. Sequência
         if not self.find_and_click("1_btn_pesquisar.png"): return False, "Erro Btn Pesquisar"
         if not self.find_and_click("2_btn_alternar.png"): return False, "Erro Btn Alternar"
         if not self.find_and_click("3_btn_comecar.png"): return False, "Erro Btn Começar"
@@ -168,32 +166,31 @@ class App(customtkinter.CTk):
         if not self.find_and_click("4_btn_lupa.png"): return False, "Erro Btn Lupa"
         time.sleep(2.0) 
         
-        # 2. Ordenação e Filtro Cancelado
+        # 2. Verificação
         pos_header = pyautogui.locateCenterOnScreen(os.path.join("assets", "cabecalho_id.png"), confidence=0.8)
         if not pos_header: return False, "Erro Cabeçalho ID"
             
         pyautogui.click(pos_header) # Ordena
         time.sleep(1.0)
         
-        # Verifica linha 1
         roi = (int(pos_header.x), int(pos_header.y + 10), 800, 50)
         cancelado = pyautogui.locateOnScreen(os.path.join("assets", "status_cance_normal.png"), region=roi, confidence=0.8)
         
         if cancelado:
             self.log_technical(f"ID {id_alvo}: Linha 1 Cancelada. Indo para Linha 2.")
-            pyautogui.click(pos_header.x, pos_header.y + 45) # Offset Linha 2
+            pyautogui.click(pos_header.x, pos_header.y + 45) 
         else:
-            pyautogui.click(pos_header.x, pos_header.y + 25) # Offset Linha 1
+            pyautogui.click(pos_header.x, pos_header.y + 25) 
             
         time.sleep(0.5)
 
-        # 3. Anexar e Digitar Caminho
+        # 3. Anexar
         if not self.find_and_click("6_btn_anexar.png"): return False, "Erro Btn Anexar"
         
-        time.sleep(1.5) # Espera janela Windows
-        pyautogui.write(arquivo_caminho) # Digita caminho completo
+        time.sleep(1.5)
+        pyautogui.write(arquivo_caminho) 
         time.sleep(0.5)
-        pyautogui.press('enter') # Confirma
+        pyautogui.press('enter') 
         
         return True, "Sucesso"
 
@@ -208,7 +205,12 @@ class App(customtkinter.CTk):
         if not pasta or not operador: 
             return self.log_visual("ERRO: Preencha pasta e operador.")
 
-        # Cria logs
+        # Cria pasta "Processados" se não existir
+        pasta_processados = os.path.join(pasta, "Processados")
+        if not os.path.exists(pasta_processados):
+            os.makedirs(pasta_processados)
+            self.log_visual("Pasta 'Processados' criada.")
+
         self.txt_log_path = os.path.join(pasta, f"LOG_TEC_{datetime.now().strftime('%Y-%m-%d')}.txt")
         self.excel_log_path = os.path.join(pasta, "RELATORIO_GERENCIAL.xlsx")
 
@@ -218,7 +220,7 @@ class App(customtkinter.CTk):
         sistema = "BIOCROMA" if self.radio_var.get() == 0 else "BIOVIDA"
         arquivos = [f for f in os.listdir(pasta) if f.lower().endswith('.pdf')]
         
-        self.log_visual(f"Arquivos encontrados: {len(arquivos)}")
+        self.log_visual(f"Arquivos: {len(arquivos)}")
         if not MODO_SIMULACAO: time.sleep(3)
 
         for i, arquivo in enumerate(arquivos):
@@ -234,7 +236,16 @@ class App(customtkinter.CTk):
                 self.log_excel(id_val, arquivo, status, motivo)
                 self.log_visual(f"ID {id_val}: {status}")
                 
-                if sucesso: time.sleep(0.5 if MODO_SIMULACAO else 1)
+                # SE DEU SUCESSO, MOVE O ARQUIVO
+                if sucesso:
+                    try:
+                        destino = os.path.join(pasta_processados, arquivo)
+                        shutil.move(path_full, destino)
+                        self.log_technical(f"Arquivo movido para: {destino}")
+                    except Exception as e:
+                        self.log_visual(f"ERRO AO MOVER: {e}")
+
+                    time.sleep(0.5 if MODO_SIMULACAO else 1)
             else:
                 self.log_visual(f"Pulado: {arquivo}")
                 self.log_excel("N/A", arquivo, "IGNORADO", "Sem ID")
