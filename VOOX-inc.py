@@ -459,4 +459,311 @@ class App(tk.Tk):
         tk.Label(row, text="X:", font=(FNT, 9), bg=bg_row, fg=MUTED).pack(side="left")
         v_x = tk.StringVar(value=str(step.get("x", 0)))
         tk.Entry(row, textvariable=v_x, font=(FNT, 9, "bold"), width=7,
-                 bg=BG, fg=
+                 bg=BG, fg=ACCENT, relief="flat",
+                 highlightbackground=BORDER, highlightthickness=1,
+                 insertbackground=ACCENT
+                 ).pack(side="left", ipady=3, padx=(2, 6))
+
+        # Y
+        tk.Label(row, text="Y:", font=(FNT, 9), bg=bg_row, fg=MUTED).pack(side="left")
+        v_y = tk.StringVar(value=str(step.get("y", 0)))
+        tk.Entry(row, textvariable=v_y, font=(FNT, 9, "bold"), width=7,
+                 bg=BG, fg=ACCENT, relief="flat",
+                 highlightbackground=BORDER, highlightthickness=1,
+                 insertbackground=ACCENT
+                 ).pack(side="left", ipady=3, padx=(2, 6))
+
+        # Texto
+        tk.Label(row, text="Texto:", font=(FNT, 9), bg=bg_row, fg=MUTED).pack(side="left")
+        v_texto = tk.StringVar(value=step.get("texto", ""))
+        tk.Entry(row, textvariable=v_texto, font=(FNT, 9), width=20,
+                 bg=BG, fg=PURPLE, relief="flat",
+                 highlightbackground=BORDER, highlightthickness=1,
+                 insertbackground=ACCENT
+                 ).pack(side="left", ipady=3, padx=(2, 6), fill="x", expand=True)
+
+        # Remover
+        def remover(c=container, sv=sv_list):
+            c.destroy()
+
+        tk.Button(row, text="✕", font=(FNT, 9, "bold"), bg=DANGER, fg=BG,
+                  relief="flat", cursor="hand2", padx=7, pady=3,
+                  command=remover).pack(side="left", padx=(4, 0))
+
+        sv_list.append({
+            "nome": v_nome, "acao": v_acao,
+            "x": v_x, "y": v_y,
+            "texto": v_texto, "ativo": v_ativo,
+            "_frame": container,
+        })
+
+    def _capturar(self, ex, ey):
+        x, y = pyautogui.position()
+        ex.delete(0, "end"); ex.insert(0, str(x))
+        ey.delete(0, "end"); ey.insert(0, str(y))
+
+    def _get_steps(self, sv_list):
+        steps = []
+        for sv in sv_list:
+            try:
+                if not sv["_frame"].winfo_exists():
+                    continue
+                steps.append({
+                    "nome":  sv["nome"].get(),
+                    "acao":  sv["acao"].get(),
+                    "x":     int(sv["x"].get() or 0),
+                    "y":     int(sv["y"].get() or 0),
+                    "texto": sv["texto"].get(),
+                    "ativo": sv["ativo"].get(),
+                })
+            except Exception:
+                pass
+        return steps
+
+    def _save_steps(self, modelo):
+        sv = self._sv_biovida if modelo == "biovida" else self._sv_biocloma
+        self.cfg[f"steps_{modelo}"] = self._get_steps(sv)
+        save_config(self.cfg)
+        messagebox.showinfo("Salvo", f"Passos {modelo.title()} salvos!")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # ABA EXECUÇÃO
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _build_run(self):
+        wrap = tk.Frame(self.t_run, bg=BG, padx=16, pady=10)
+        wrap.pack(fill="both", expand=True)
+
+        # Modo
+        mc = self._card(wrap, "◈  Modo de Execução")
+        self._modo = tk.StringVar(value="biovida")
+        mr = tk.Frame(mc, bg=PANEL); mr.pack(fill="x", padx=14, pady=10)
+        for val, lbl, clr in [("biovida", "⬡  BioVida", ACCENT),
+                               ("biocloma", "⬡  Biocloma", BLUE),
+                               ("ambos", "⬡  Ambos", PURPLE)]:
+            tk.Radiobutton(mr, text=lbl, variable=self._modo, value=val,
+                           font=(FNT, 10, "bold"), bg=PANEL, fg=TEXT,
+                           selectcolor=BG, activebackground=PANEL,
+                           activeforeground=clr, indicatoron=False,
+                           relief="flat", padx=22, pady=7, cursor="hand2",
+                           highlightbackground=BORDER
+                           ).pack(side="left", padx=5)
+
+        # Progresso
+        pc = self._card(wrap, None)
+        self._lbl_prog = tk.Label(pc, text="Aguardando...", font=(FNT, 9),
+                                  bg=PANEL, fg=MUTED, pady=6, padx=14)
+        self._lbl_prog.pack(anchor="w")
+        ps = ttk.Style()
+        ps.configure("G.Horizontal.TProgressbar", troughcolor=BG,
+                     background=ACCENT, borderwidth=0, thickness=10)
+        self._prog = ttk.Progressbar(pc, style="G.Horizontal.TProgressbar",
+                                     mode="determinate")
+        self._prog.pack(fill="x", padx=14, pady=(0, 10))
+
+        # Log
+        log_outer = tk.Frame(wrap, bg=BORDER)
+        log_outer.pack(fill="both", expand=True, pady=6)
+        log_inner = tk.Frame(log_outer, bg=PANEL)
+        log_inner.pack(fill="both", expand=True, padx=1, pady=1)
+
+        tk.Label(log_inner, text="◈  Log de Execução", font=(FNT, 9, "bold"),
+                 bg=PANEL, fg=BLUE, pady=7, padx=14).pack(anchor="w")
+        tk.Frame(log_inner, bg=BORDER, height=1).pack(fill="x")
+
+        txt_frame = tk.Frame(log_inner, bg="#111111")
+        txt_frame.pack(fill="both", expand=True)
+        self._log = tk.Text(txt_frame, font=(FNT, 9), bg="#111111", fg=TEXT,
+                            relief="flat", padx=12, pady=8, wrap="word",
+                            state="disabled", insertbackground=ACCENT)
+        vsb2 = ttk.Scrollbar(txt_frame, command=self._log.yview)
+        self._log.configure(yscrollcommand=vsb2.set)
+        vsb2.pack(side="right", fill="y")
+        self._log.pack(fill="both", expand=True)
+
+        for tag, fg in [("info", TEXT), ("action", ACCENT), ("success", GREEN),
+                        ("error", DANGER), ("warn", WARN), ("header", BLUE),
+                        ("muted", MUTED), ("id", PURPLE)]:
+            self._log.tag_configure(tag, foreground=fg)
+
+        # Botões
+        bc = tk.Frame(wrap, bg=BG, pady=8); bc.pack(fill="x")
+        self._btn_ini = self._btn(bc, "▶  INICIAR", self._iniciar,
+                                  bg=ACCENT, fg=BG, padx=24, pady=8)
+        self._btn_ini.pack(side="left", padx=(0, 8))
+
+        self._btn_par = self._btn(bc, "■  PARAR", self._parar_click,
+                                  bg=DANGER, fg=BG, padx=24, pady=8)
+        self._btn_par.pack(side="left", padx=(0, 8))
+        self._btn_par.configure(state="disabled")
+
+        self._btn(bc, "🗑  LIMPAR LOG", self._limpar_log,
+                  bg=BORDER, fg=TEXT, padx=14, pady=8).pack(side="left")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # LOG HELPERS
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def log(self, msg, tag="info"):
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._log.configure(state="normal")
+        self._log.insert("end", f"[{ts}] ", "muted")
+        self._log.insert("end", msg + "\n", tag)
+        self._log.see("end")
+        self._log.configure(state="disabled")
+        self.update_idletasks()
+
+    def _limpar_log(self):
+        self._log.configure(state="normal")
+        self._log.delete("1.0", "end")
+        self._log.configure(state="disabled")
+
+    def _set_prog(self, val, total):
+        self._prog["value"] = val
+        pct = int(val / total * 100) if total else 0
+        self._lbl_prog.configure(text=f"Progresso: {val} / {total}  ({pct}%)")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # SALVAR TUDO
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _save_all(self):
+        self.cfg["pasta_biovida"]     = self._e_pasta_bio.get()
+        self.cfg["pasta_biocloma"]    = self._e_pasta_clo.get()
+        self.cfg["planilha_biocloma"] = self._e_plan_clo.get()
+        for key, sp in self._spins.items():
+            try:
+                self.cfg[key] = float(sp.get())
+            except Exception:
+                pass
+        self.cfg["steps_biovida"]  = self._get_steps(self._sv_biovida)
+        self.cfg["steps_biocloma"] = self._get_steps(self._sv_biocloma)
+        save_config(self.cfg)
+        messagebox.showinfo("Salvo", "Todas as configurações salvas com sucesso!")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # EXECUÇÃO
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _iniciar(self):
+        if self._rodando:
+            return
+        self._save_all()
+        self._parar   = False
+        self._rodando = True
+        self._btn_ini.configure(state="disabled")
+        self._btn_par.configure(state="normal")
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _parar_click(self):
+        self._parar = True
+        self.log("⚠  Parada solicitada — aguarda fim do passo atual...", "warn")
+
+    def _finalizar_ui(self):
+        self._rodando = False
+        self._btn_ini.configure(state="normal")
+        self._btn_par.configure(state="disabled")
+
+    def _run(self):
+        modo   = self._modo.get()
+        d_paso = self.cfg.get("delay_entre_passos",    0.8)
+        d_reg  = self.cfg.get("delay_entre_registros", 2.0)
+        d_clk  = self.cfg.get("delay_pos_click",       0.3)
+
+        self.log("═" * 60, "muted")
+        self.log(f"  BioAutomação iniciada  —  modo: {modo.upper()}", "header")
+        self.log("═" * 60, "muted")
+
+        items_bio, items_clo = [], []
+
+        # Coleta BioVida
+        if modo in ("biovida", "ambos"):
+            pasta = self.cfg.get("pasta_biovida", "")
+            if os.path.isdir(pasta):
+                self.log(f"📂  Lendo BioVida: {pasta}", "info")
+                try:
+                    items_bio = listar_pdfs_biovida(pasta)
+                    self.log(f"   → {len(items_bio)} PDF(s) encontrado(s).", "success")
+                except Exception as e:
+                    self.log(f"✗  Erro BioVida: {e}", "error")
+            else:
+                self.log("✗  Pasta BioVida inválida ou não configurada.", "error")
+
+        # Coleta Biocloma
+        if modo in ("biocloma", "ambos"):
+            pasta    = self.cfg.get("pasta_biocloma", "")
+            planilha = self.cfg.get("planilha_biocloma", "")
+            if os.path.isdir(pasta) and os.path.exists(planilha):
+                self.log(f"📊  Lendo Biocloma: {planilha}", "info")
+                try:
+                    items_clo = listar_pdfs_biocloma(pasta, planilha)
+                    self.log(f"   → {len(items_clo)} item(s) mapeado(s).", "success")
+                except Exception as e:
+                    self.log(f"✗  Erro Biocloma: {e}", "error")
+            else:
+                self.log("✗  Pasta ou planilha Biocloma inválida.", "error")
+
+        total = len(items_bio) + len(items_clo)
+        if total == 0:
+            self.log("⚠  Nenhum item para processar.", "warn")
+            self.after(0, self._finalizar_ui)
+            return
+
+        self.log(f"   Total: {total} registro(s)", "header")
+        self._prog["maximum"] = total
+        self.after(0, lambda: self._set_prog(0, total))
+
+        processados = erros = 0
+
+        def processar(items, modelo):
+            nonlocal processados, erros
+            steps = self.cfg.get(f"steps_{modelo}", [])
+            for item in items:
+                if self._parar:
+                    break
+                self.log(f"\n── {modelo.upper()} " + "─" * 44, "muted")
+                self.log(f"📄  Arquivo : {item['nome']}", "info")
+                self.log(f"🔑  ID busca: {item['id']}", "id")
+
+                pasta_pdf = os.path.dirname(item["arquivo"])
+                nome_pdf  = item["nome"]
+                ok = True
+
+                for step in steps:
+                    if self._parar:
+                        ok = False; break
+                    try:
+                        executar_passo(step, item["id"], pasta_pdf, nome_pdf, d_clk, self.log)
+                        time.sleep(d_paso)
+                    except pyautogui.FailSafeException:
+                        self.log("🛑  FAILSAFE! Mouse no canto superior esquerdo.", "error")
+                        self._parar = True; ok = False; break
+                    except Exception as e:
+                        self.log(f"✗  Passo '{step.get('nome','')}': {e}", "error")
+                        erros += 1
+
+                if ok:
+                    self.log("✔  Registro concluído.", "success")
+                else:
+                    self.log("⚠  Registro interrompido.", "warn")
+
+                processados += 1
+                self.after(0, lambda v=processados: self._set_prog(v, total))
+
+                if not self._parar:
+                    time.sleep(d_reg)
+
+        processar(items_bio, "biovida")
+        if not self._parar:
+            processar(items_clo, "biocloma")
+
+        self.log("\n" + "═" * 60, "muted")
+        self.log(f"  Finalizado  —  ✔ {processados} processados   ✗ {erros} erros", "header")
+        self.log("═" * 60, "muted")
+        self.after(0, self._finalizar_ui)
+
+
+# ─── MAIN ──────────────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    app = App()
+    app.mainloop()
