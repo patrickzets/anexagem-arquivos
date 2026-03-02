@@ -1,0 +1,259 @@
+import tkinter as tk
+from tkinter import ttk
+import threading
+import time
+import json
+import os
+from datetime import datetime
+
+try:
+    import pyautogui
+    import keyboard
+except ImportError:
+    import subprocess, sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "pyautogui", "keyboard", "--quiet"])
+    import pyautogui
+    import keyboard
+
+# ─── PALETA ────────────────────────────────────────────────────────────────────
+BG     = "#141414"
+PANEL  = "#1e1e1e"
+CARD   = "#252525"
+BORDER = "#3a3535"
+ACCENT = "#9E192B"
+GREEN  = "#4caf82"
+TEXT   = "#f0ebe8"
+MUTED  = "#7a7170"
+FNT    = "Courier New"
+
+SAVE_FILE = "coordenadas_capturadas.json"
+
+
+class XYCapturador(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("XY Capturador — F8 para gravar")
+        self.geometry("420x560")
+        self.minsize(360, 480)
+        self.configure(bg=BG)
+        self.resizable(True, True)
+        # Sempre no topo
+        self.attributes("-topmost", True)
+
+        self._coords = []
+        self._tracking = True
+        self._flash_job = None
+
+        self._build()
+        self._start_tracking()
+        self._register_hotkey()
+
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # BUILD
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _build(self):
+        # Header
+        hdr = tk.Frame(self, bg=BG, pady=10)
+        hdr.pack(fill="x", padx=16)
+        tk.Label(hdr, text="⊕", font=(FNT, 18, "bold"), bg=BG, fg=ACCENT).pack(side="left")
+        tk.Label(hdr, text="  XY", font=(FNT, 16, "bold"), bg=BG, fg=ACCENT).pack(side="left")
+        tk.Label(hdr, text=" CAPTURADOR", font=(FNT, 16, "bold"), bg=BG, fg=TEXT).pack(side="left")
+
+        tk.Frame(self, bg=ACCENT, height=2).pack(fill="x", padx=16)
+
+        # Display X/Y atual
+        xy_card = tk.Frame(self, bg=BORDER)
+        xy_card.pack(fill="x", padx=16, pady=12)
+        xy_inner = tk.Frame(xy_card, bg=PANEL)
+        xy_inner.pack(fill="x", padx=1, pady=1)
+
+        row_xy = tk.Frame(xy_inner, bg=PANEL, pady=14)
+        row_xy.pack(fill="x", padx=20)
+
+        # X
+        col_x = tk.Frame(row_xy, bg=PANEL)
+        col_x.pack(side="left", expand=True)
+        tk.Label(col_x, text="X", font=(FNT, 11, "bold"), bg=PANEL, fg=MUTED).pack()
+        self._lbl_x = tk.Label(col_x, text="0", font=(FNT, 32, "bold"),
+                                bg=PANEL, fg=TEXT, width=6, anchor="center")
+        self._lbl_x.pack()
+
+        tk.Frame(row_xy, bg=BORDER, width=2).pack(side="left", fill="y", padx=10)
+
+        # Y
+        col_y = tk.Frame(row_xy, bg=PANEL)
+        col_y.pack(side="left", expand=True)
+        tk.Label(col_y, text="Y", font=(FNT, 11, "bold"), bg=PANEL, fg=MUTED).pack()
+        self._lbl_y = tk.Label(col_y, text="0", font=(FNT, 32, "bold"),
+                                bg=PANEL, fg=TEXT, width=6, anchor="center")
+        self._lbl_y.pack()
+
+        # Instrução F8
+        self._lbl_hint = tk.Label(xy_inner,
+                                   text="Pressione  F8  para gravar esta posição",
+                                   font=(FNT, 9), bg=PANEL, fg=MUTED, pady=8)
+        self._lbl_hint.pack()
+
+        # Gravadas
+        list_card = tk.Frame(self, bg=BORDER)
+        list_card.pack(fill="both", expand=True, padx=16, pady=(0, 6))
+        list_inner = tk.Frame(list_card, bg=PANEL)
+        list_inner.pack(fill="both", expand=True, padx=1, pady=1)
+
+        hdr_row = tk.Frame(list_inner, bg=PANEL, pady=6)
+        hdr_row.pack(fill="x", padx=12)
+        tk.Label(hdr_row, text="◈  Coordenadas Gravadas",
+                 font=(FNT, 9, "bold"), bg=PANEL, fg="#2a5248").pack(side="left")
+        self._lbl_count = tk.Label(hdr_row, text="(0)",
+                                    font=(FNT, 9), bg=PANEL, fg=MUTED)
+        self._lbl_count.pack(side="left", padx=(6, 0))
+
+        tk.Frame(list_inner, bg=BORDER, height=1).pack(fill="x")
+
+        # Listbox + scrollbar
+        lb_frame = tk.Frame(list_inner, bg=PANEL)
+        lb_frame.pack(fill="both", expand=True, padx=1)
+        vsb = ttk.Scrollbar(lb_frame, orient="vertical")
+        vsb.pack(side="right", fill="y")
+        self._listbox = tk.Listbox(lb_frame, font=(FNT, 9),
+                                    bg="#111111", fg=TEXT,
+                                    selectbackground=ACCENT,
+                                    selectforeground=TEXT,
+                                    relief="flat", borderwidth=0,
+                                    activestyle="none",
+                                    yscrollcommand=vsb.set)
+        vsb.configure(command=self._listbox.yview)
+        self._listbox.pack(fill="both", expand=True, padx=6, pady=6)
+
+        # Botões
+        btn_frame = tk.Frame(self, bg=BG, pady=6)
+        btn_frame.pack(fill="x", padx=16)
+
+        tk.Button(btn_frame, text="🗑  LIMPAR",
+                  font=(FNT, 9, "bold"), bg=BORDER, fg=TEXT,
+                  relief="flat", cursor="hand2", padx=12, pady=6,
+                  command=self._limpar).pack(side="left", padx=(0, 6))
+
+        tk.Button(btn_frame, text="❌  REMOVER SELECIONADO",
+                  font=(FNT, 9, "bold"), bg=BORDER, fg=TEXT,
+                  relief="flat", cursor="hand2", padx=12, pady=6,
+                  command=self._remover_sel).pack(side="left", padx=(0, 6))
+
+        tk.Button(btn_frame, text="💾  SALVAR JSON",
+                  font=(FNT, 9, "bold"), bg=ACCENT, fg=TEXT,
+                  relief="flat", cursor="hand2", padx=12, pady=6,
+                  command=self._salvar).pack(side="right")
+
+        # Status bar
+        self._lbl_status = tk.Label(self, text="🟢  Rastreando...",
+                                     font=(FNT, 8), bg=BG, fg=GREEN,
+                                     pady=4)
+        self._lbl_status.pack(anchor="w", padx=16)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TRACKING
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _start_tracking(self):
+        def loop():
+            while self._tracking:
+                try:
+                    x, y = pyautogui.position()
+                    self.after(0, self._update_xy, x, y)
+                except Exception:
+                    pass
+                time.sleep(0.05)  # 20fps
+        threading.Thread(target=loop, daemon=True).start()
+
+    def _update_xy(self, x, y):
+        self._lbl_x.configure(text=str(x))
+        self._lbl_y.configure(text=str(y))
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # HOTKEY F8
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _register_hotkey(self):
+        def on_f8():
+            try:
+                x, y = pyautogui.position()
+                self.after(0, self._gravar, x, y)
+            except Exception:
+                pass
+
+        keyboard.add_hotkey("f8", on_f8, suppress=False)
+
+    def _gravar(self, x, y):
+        ts = datetime.now().strftime("%H:%M:%S")
+        idx = len(self._coords) + 1
+        entry = {"index": idx, "x": x, "y": y, "hora": ts}
+        self._coords.append(entry)
+
+        linha = f"  {idx:02d}   X: {x:<6}  Y: {y:<6}   [{ts}]"
+        self._listbox.insert("end", linha)
+        self._listbox.see("end")
+        self._lbl_count.configure(text=f"({len(self._coords)})")
+
+        # Flash verde no display
+        self._lbl_x.configure(fg=GREEN)
+        self._lbl_y.configure(fg=GREEN)
+        self._lbl_hint.configure(text=f"✔  Gravado!  ({x}, {y})", fg=GREEN)
+        if self._flash_job:
+            self.after_cancel(self._flash_job)
+        self._flash_job = self.after(600, self._reset_flash)
+
+    def _reset_flash(self):
+        self._lbl_x.configure(fg=TEXT)
+        self._lbl_y.configure(fg=TEXT)
+        self._lbl_hint.configure(text="Pressione  F8  para gravar esta posição", fg=MUTED)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # AÇÕES
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _limpar(self):
+        self._coords.clear()
+        self._listbox.delete(0, "end")
+        self._lbl_count.configure(text="(0)")
+
+    def _remover_sel(self):
+        sel = self._listbox.curselection()
+        if not sel:
+            return
+        idx = sel[0]
+        self._listbox.delete(idx)
+        self._coords.pop(idx)
+        # Re-numera
+        self._coords = [dict(e, index=i+1) for i, e in enumerate(self._coords)]
+        self._listbox.delete(0, "end")
+        for e in self._coords:
+            linha = f"  {e['index']:02d}   X: {e['x']:<6}  Y: {e['y']:<6}   [{e['hora']}]"
+            self._listbox.insert("end", linha)
+        self._lbl_count.configure(text=f"({len(self._coords)})")
+
+    def _salvar(self):
+        if not self._coords:
+            self._lbl_status.configure(text="⚠  Nada para salvar.", fg="#c4883a")
+            self.after(2000, lambda: self._lbl_status.configure(
+                text="🟢  Rastreando...", fg=GREEN))
+            return
+        with open(SAVE_FILE, "w", encoding="utf-8") as f:
+            json.dump(self._coords, f, indent=2, ensure_ascii=False)
+        self._lbl_status.configure(
+            text=f"💾  Salvo em {SAVE_FILE}  ({len(self._coords)} coordenadas)", fg=GREEN)
+
+    def _on_close(self):
+        self._tracking = False
+        try:
+            keyboard.remove_all_hotkeys()
+        except Exception:
+            pass
+        self.destroy()
+
+
+if __name__ == "__main__":
+    app = XYCapturador()
+    app.mainloop()
