@@ -1,1 +1,1 @@
-https://paineldecontrole.up.railway.app/
+https://claude.ai/public/artifacts/715b3b8b-abba-443a-b5cc-2f3bb64f2a39
